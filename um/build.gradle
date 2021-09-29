@@ -32,6 +32,10 @@ setup.doLast {
 
     // ln('cmsbs-conf/adminRoles', pinuts.um.cmsbsConfDir)
     // ln('cmsbs-conf/entryTypes', pinuts.um.cmsbsConfDir)
+
+    // UM REST Proxy
+    cp('UM/web-integration/cmsbs-restproxy.war', new File(pinuts.um.webappsDir, 'p.war'))
+    cp('rest-proxy/cmsbs-restproxy.properties', new File(pinuts.um.serverHome, 'cmsbs-restproxy.properties'))
 }
 
 setup.finalizedBy vscode

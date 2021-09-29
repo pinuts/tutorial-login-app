@@ -9,18 +9,15 @@ block layout-content
         h3 Universal Messenger
         h1 Login App Tutorial
         if userProfile
-          pre.Details You are granted the following permission: #{userProfile._permissions}
+          pre.Details You are granted the following permissions: #{userProfile._permissions}
 
-        div(id="pinuts-widgets-auth2-p7852919-loader", class="pinuts-widgets-loading") Formular wird geladen ...
-        script(id="pinuts-widgets-auth2-p7852919").
+        div(id="pinuts-widgets-auth2-my-ap-loader", class="pinuts-widgets-loading") Loading login form ...
+        script(id="pinuts-widgets-auth2-my-ap").
             (function() {
-                var errorHtml = "Formular konnte nicht geladen werden.";
+                var errorHtml = "Login form failed to load.";
                 var locale = "en";
-                var containerId = "pinuts-widgets-auth2-p7852919";
+                var containerId = "pinuts-widgets-auth2-my-ap";
                 window.setTimeout(function(){var d = document.getElementById(containerId + '-loader');if (!d) return;d.setAttribute("class","pinuts-widgets-loading failed");d.innerHTML = errorHtml;}, 10000);
-                var script = document.createElement('script'); script.src = '/cmsbs/rest/de.pinuts.cmsbs.auth2.Widget/index?name=my-app&containerId=' + containerId + '&locale=' + locale;
+                var script = document.createElement('script'); script.src = '/p/de.pinuts.cmsbs.auth2.Widget/index?name=my-app&containerId=' + containerId + '&locale=' + locale;
                 document.getElementsByTagName('script')[0].parentNode.appendChild(script);
             })();
-    div.NavButtons
-      a(href="/logout")
-        div.NavButton Log out

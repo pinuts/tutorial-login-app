@@ -24,10 +24,13 @@ app.use(express.static(path.join(__dirname, "public")));
 /**
  * Proxy to UM REST API
  */
-const url = require('url');
 const proxy = require('express-http-proxy');
-const apiProxy = proxy('localhost:8080/cmsbs', {
-  proxyReqPathResolver: req => url.parse(req.baseUrl).path
+const apiProxy = proxy('localhost:8080/p', {
+  proxyReqPathResolver: req => "/p" + req.url,
+  proxyReqOptDecorator: function (proxyReqOpts, srcReq) {
+    proxyReqOpts.headers["x-cmsbs-urlprefix"] = 'http://localhost:' + port + '/p';
+    return proxyReqOpts;
+  },
 });
 
 /**
@@ -36,8 +39,7 @@ const apiProxy = proxy('localhost:8080/cmsbs', {
 app.get("/", (req, res) => {
   res.render("index", { title: "Home" });
 });
-app.use('/p/*', apiProxy);
-app.use('/cmsbs/*', apiProxy);
+app.use('/p/', apiProxy);
 app.get("/user", (req, res) => {
   // UMSESSIONID aus den Cookies auslesen und an den UM weiterschicken
 
