@@ -4,17 +4,15 @@ apply from: '.umstarter.gradle'
 
 dependencies {
     runtime('de.pinuts.cmsbs:UM:7.40.1')
-
-    // http://mavenrepo/#artifact~pinuts-releases/de.pinuts.cmsbs/CseConsole
     runtime('de.pinuts.cmsbs:CseConsole:7.32.3')
-
-    // http://mavenrepo/#artifact~pinuts-releases/de.pinuts.cmsbs/TestDriver2
     runtime('de.pinuts.cmsbs:TestDriver2:2.0.10')
+    // runtime('de.pinuts.cmsbs:Auth2:4.6.0')
 }
 
 pinuts.projectName = 'MyProject'
-pinuts.groupId = 'de.pinuts'
+pinuts.groupId = 'de.customer'
 pinuts.um.port = System.getenv('MY_PROJECT_SERVER_PORT') ?: '8080'
+pinuts.um.localLicenseFile = file('env/devel/cmsbs-conf/cmsbs.license')
 pinuts.version = getVersionFromPluginDescriptor('the_plugin/plugin.desc.json')
 
 startUm.dependsOn << umSchemaUpdate

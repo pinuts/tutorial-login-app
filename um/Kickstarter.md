@@ -9,6 +9,9 @@ UM installieren und Konfigurationsdateien gemäß `build.gradle` kopieren bzw. v
 gradle setup
 ```
 
+Hier kommt ggf. eine Fehlermeldung, die besagt, dass der Installer die Lizenz nicht finden konnte.
+Sie muss manuell unter `env/devel/cmsbs-conf/cmsbs.license` abgelegt werden. 
+
 UM starten:
 ```bash
 gradle run
@@ -21,7 +24,6 @@ gradle dist -Penv=${ENVIRONMENT}
 
 Docker-Image für Umgebung `${ENVIRONMENT}` bauen:
 ```bash
-# gradle dockerize
 gradle dockerimage -Penv=${ENVIRONMENT}
 ```
 
@@ -42,32 +44,15 @@ gradle update
 
 ## UM-Plugins aus Mavenrepo einbinden
 
-UM-Plugins aus unserem Mavenrepo ([Releases](http://mavenrepo/#browse~pinuts-releases/de.pinuts.cmsbs)
-und [Snapshots](http://mavenrepo/#browse~pinuts-snapshots/de.pinuts.cmsbs))
+UM-Plugins aus unserem [Mavenrepo](https://admin.cloudrepo.io/repository/um/de/pinuts/cmsbs)
 können in `build.gradle` in den
 _dependencies_ angefordert werden. Sie werden dann automatisch nach `UM/cmsbs-conf/cse/plugins/`
 ausgepackt.
 ```groovy
 dependencies {
-    runtime('de.pinuts.cmsbs:UM:7.32.0')
-    runtime('de.pinuts.cmsbs:CseConsole:7.10.4')
-    runtime('de.pinuts.cmsbs:Templating:master-SNAPSHOT')
-    runtime('de.pinuts.cmsbs:Solr:0.2.9')
+    runtime('de.pinuts.cmsbs:UM:7.34.1')
+    runtime('de.pinuts.cmsbs:CseConsole:7.32.0')
 }
-```
-
-## UM-Plugins direkt aus Git einbinden
-
-Wenn bestimmte Plugins nicht aus dem Mavenrepo, sondern direkt aus dem Git
-geholt werden sollen, geht das so:
-```groovy
-// UM Plugins aus dem GIT holen und in pinuts.um.pluginsDir verlinken:
-pinuts.gitPlugins = [
-    [ clone: 'git@git:cmsbs-plugins/auth2.git' ],
-    [ clone: 'git@git:cmsbs/libplugin.git', branch: 'hbsauthpoc'],
-]
-
-setup.finalizedBy gitplugins // automatisch beim setup miterledigen
 ```
 
 ## Eigenes UM-Plugin erstellen
@@ -79,7 +64,7 @@ setup.doLast {
     ln('cmsbs-conf/cse/plugins/de.pinuts.myumaddon', pinuts.um.pluginsDir)
 }
 ```
-Beispiele und API-Dokumentation gibt es hier: [UM-API-Doc](http://bob.intra.pinuts.de/~build/api-cse/)
+Beispiele und API-Dokumentation gibt es hier: [UM-API-Doc](https://www.universal-messenger.de/knowledge-base/intern/doc-api/api-cse/)
 
 ## "Deployables" bauen
 
@@ -138,6 +123,49 @@ pinuts.version = getVersionFromPluginDescriptor('the_plugin/plugin.desc.json')
 ln -s cmsbs-conf/cse/plugins/de.pinuts.myumaddon the_plugin
 ```
 
+## Plugin in eigenem Maven-Repo veröffentlichen
+
+Das per `gradle dist` gebaute UM-Plugin kann in einem eigenen -- ggf. S3-basierten -- Maven-Repo veröffentlich werden.
+(S3-Unterstützung ist in gradle erst ab Version 5 enhalten.)
+Dazu wird in `build.gradle` folgender Block *hinter* dem der Zuweisung `pinuts.version = ...` eingefügt:
+```groovy
+...
+// pinuts.projectName = 'MyProject'
+// pinuts.groupId = 'de.customer'
+// pinuts.version = getVersionFromPluginDescriptor('the_plugin/plugin.desc.json')
+
+publishing {
+    publications {
+        cmsbsPlugin(MavenPublication) {
+            groupId = pinuts.groupId
+            artifactId = pinuts.projectName
+            version = "${pinuts.env}-SNAPSHOT"
+            artifact getCmsbsPluginDistFile()
+        }
+    }
+    repositories {
+        maven {
+            name "s3bucket"
+            url "s3://BUCKET_NAME/snapshots"
+            credentials(AwsCredentials) {
+                accessKey awsCredentials.AWSAccessKeyId
+                secretKey awsCredentials.AWSSecretKey
+            }
+        }
+    }
+}
+```
+
+Soll wie im Beispiel ein S3-Bucket als Ziel verwendet werden, müssen die entsprechenden Credentials in den
+Umgebungsvariablen `AWS_ACCESS_KEY_ID` und `AWS_SECRET_ACCESS_KEY` hinterlegt sein.
+
+Die Veröffentlichung wird dann wie folgt ausgelöst:
+```bash
+gradle publish                   # -> de.customer:MyProject:devel-SNAPSHOT
+gradle publish -Penv=staging     # -> de.customer:MyProject:staging-SNAPSHOT
+gradle publish -Penv=prod        # -> de.customer:MyProject:prod-SNAPSHOT
+```
+
 ## Buildskript aktualisieren
 
 Alle UM-spezifischen Gradle-Tasks sind in `.umstarter.gradle` implementiert.
@@ -148,16 +176,7 @@ gradle updateBuildScript
 
 ## Docker-Image bauen
 
-Soll der UM in einer Dockerumgebung ausgeführt werden, müssen zunächst die dazu
-erforderlichen Dateien (`Dockerfile`, `.docker-entrypoint.sh`,
-`.dockerignore`, `.um.varfile`) heruntergeladen bzw. generiert werden:
-```bash
-gradle dockerize
-```
-Diese Dateien gehören ins git und können -- falls erforderlich -- angepasst
-werden.
-
-Nun kann ein Dockerimage gebaut werden -- z.B. für die _prod_-Umgebung:
+Für das Deployment auf einem Staging- oder Produktivsystem kann ein Dockerimage gebaut werden -- z.B. für die _prod_-Umgebung:
 ```bash
 gradle dockerimage -Penv=prod
 ```
@@ -169,33 +188,8 @@ Von diesem Image kann man dann einen Container starten, z.B.:
 docker run --rm -p 8080:8080 myproject:prod
 ```
 
-## HTML-Dummy aus Fremd-Git einbinden
-To be documented...
-```groovy
-// HTML Dummy aus GIT holen und in pinuts.um.webappsRootDir verlinken:
-pinuts.gitHtml.clone = 'git@git:irgendein/projekt.git'
-setup.finalizedBy githtml // automatisch beim setup miterledigen
-```
-
 ## Testing
 To be documented...
 ```groovy
 test.dependsOn << testDriver_umci // TestDriver automatisch anstarten
-```
-
-## Linting und Code-Formatierung
-
-In diesem Projekt wird ESlint zur Kontrolle der Code-Formatierung eingesetzt.
-
-### ESlint-Konfig installieren
-
-```
-sudo npm i -g @pinuts/eslint-config-pinuts-um
-```
-
-### ESlint-Konfig erstellen
-
-Nachdem der UM einmal gestartet wurde, wird eine passende ESlint-Konfig erstellt, die mit ins git gehört: `cmsbs-conf/.eslintrc.js`
-```
-gradle vscode
 ```

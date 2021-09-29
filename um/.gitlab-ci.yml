@@ -9,18 +9,3 @@ TestDriver-Tests:
         - |
             gradle setup test --no-daemon
 
-# Immer
-Snapshot:
-    stage: Snapshot
-    script:
-        - |
-            gradle snapshot -Penv=prod --no-daemon
-
-# Nur getaggte Versionen:
-Release:
-    stage: Release
-    only:
-      - tags
-    script:
-        - |
-            gradle release -Penv=prod --no-daemon

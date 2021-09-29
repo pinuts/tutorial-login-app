@@ -6,10 +6,10 @@
 .nfs*
 ._*
 .DS_Store
-/.mvn-settings.xml
+
 /.classpath
 /.project
 /.settings/
 /.vscode/
 /umkickstarter
-
+/env/devel/cmsbs-conf/cmsbs.license

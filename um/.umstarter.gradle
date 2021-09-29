@@ -1,4 +1,5 @@
 apply plugin: 'java'
+apply plugin: 'maven-publish'
 
 buildscript {
     repositories {
@@ -17,19 +18,10 @@ buildscript {
 import java.nio.file.*
 import java.util.*
 import static org.apache.tools.ant.taskdefs.condition.Os.*
-import org.gradle.util.GradleVersion
 import groovy.json.*
 
 import static groovyx.net.http.HttpBuilder.configure
 import groovyx.net.http.FromServer
-
-/** TODO
-
-- gitPlugins in dist berücksichtigen
-- ... und besser anpassbar
-- Alles mit Tests
-
-**/
 
 project.ext.pinuts = [
     projectName: 'NoName',
@@ -37,41 +29,24 @@ project.ext.pinuts = [
     um: [
         installerVarfile: null,
         localInstallerVarFile: new File(buildDir, 'installer.varfile'),
-        license: 'http://git.intra.pinuts.de/cmsbs/cmsbs/raw/master/tests/license7/cmsbs-devel.license',
         localLicenseFile: new File(buildDir, 'cmsbs.license'),
         serverHome: file('UM'),
         port: '8080',
         autoPort: true,
-        persistentH2: false,
         shutDownAfterTests: false,
         installerFile: null,
         jdbcDriver: null
     ],
-    gitPluginsDir: 'plugins',
-    gitPlugins: [],
-    gitHtml: [ build: 'gulp', srcPath: 'html', distPath: 'html/dist', branch: 'master', dir: 'html' ],
     version: null,
-    logFiles: [],
     docker: [
         tag: null
     ],
-    extraDist: [],
-    docfluence: null,
-    docfluenceVersion: null,
+    extraDist: []
 ]
 project.ext.pinuts.envDir = file('env/' + project.ext.pinuts.env)
 
 // Shortcut:
 ext.pinuts = project.ext.pinuts
-
-// Gradle Versions:
-def gradle6 = GradleVersion.version('6.0')
-
-// Pinuts Maven Repo:
-def CMSBS_MAVENREPO_SNAPSHOTS = 'pinuts-snapshots'
-def CMSBS_MAVENREPO_SNAPSHOTS_URL = 'http://umsnap:Oper8t0r@mavenrepo.intra.pinuts.de/repository/pinuts-snapshots'
-def CMSBS_MAVENREPO_RELEASES = 'pinuts-releases'
-def CMSBS_MAVENREPO_RELEASES_URL = 'http://umrel:Oper8t0r@mavenrepo.intra.pinuts.de/repository/pinuts-releases'
 
 // Colors and text styles:
 def ESC = '\u001b'
@@ -100,14 +75,6 @@ ext.STYLE_DEBUG = ext.FG_COLOR_GRAY
 // ext.STYLE_ERROR = ''
 ext.STYLE_SUCCESS = ext.BG_COLOR_LIGHT_GREEN + ext.FG_COLOR_WHITE
 
-// For sanity checks of dist file:
-def DIST_CHECK_UNEXPECTED_DIRECTORIES = [
-    '.test/',
-    'cmsbs-conf/cse/plugins/de.pinuts.cmsbs.testdriver/',
-    'cmsbs-conf/cse/plugins/de.pinuts.cmsbs.testdriver2/',
-    'cmsbs-conf/cse/plugins/de.pinuts.cmsbs.dev.cseconsole/'
-]
-
 configurations {
     // Make sure configuration "runtime" exists (for gradle >= 7):
     runtime
@@ -119,27 +86,12 @@ configurations.all {
 }
 
 repositories {
-    if (System.getenv('PINUTS_MAVENREPO_USERNAME') && System.getenv('PINUTS_MAVENREPO_PASSWORD')) {
-        maven {
-            url 'https://pinuts.mycloudrepo.io/repositories/um'
-            credentials {
-                username System.getenv('PINUTS_MAVENREPO_USERNAME')
-                password System.getenv('PINUTS_MAVENREPO_PASSWORD')
-            }
+    maven {
+        url 'https://pinuts.mycloudrepo.io/repositories/um'
+        credentials {
+            username System.getenv('PINUTS_MAVENREPO_USERNAME') ?: ''
+            password System.getenv('PINUTS_MAVENREPO_PASSWORD') ?: ''
         }
-    }
-    
-    maven {
-        url  'http://mavenrepo.intra.pinuts.de/repository/pinuts-snapshots'
-        if (GradleVersion.current() >= gradle6) allowInsecureProtocol(true)
-    }
-    maven {
-        url  'http://mavenrepo.intra.pinuts.de/repository/pinuts-releases'
-        if (GradleVersion.current() >= gradle6) allowInsecureProtocol(true)
-    }
-    maven {
-        url  'http://mavenrepo.intra.pinuts.de/repository/external-releases'
-        if (GradleVersion.current() >= gradle6) allowInsecureProtocol(true)
     }
 }
 
@@ -213,45 +165,15 @@ ext.getVersionFromPluginDescriptor = {pluginDescFile ->
     return pluginDesc.version
 }
 
-// x.y.z -> x.y
-ext.getDocfluenceVersion = {
-    def m = pinuts.version =~ /^(\d+)\.(\d+).*$/
-    if (!m.matches())
-        return pinuts.version // let the caller deal with it
-
-    return m[0][1] + '.' + m[0][2]
-}
-
-// Run command and return output, show only errors
-ext.simpleExecute = { stringOrArray ->
-    def out = new StringBuffer()
-    def err = new StringBuffer()
-    def p = stringOrArray.execute()
-    p.consumeProcessOutput(out, err)
-    p.waitFor();
-    def exv = p.exitValue()
-    if (exv) {
-        logger.error("${stringOrArray} failed: ${err}");
-        throw new GradleException("${stringOrArray} failed with code ${exv}")
-    }
-    return out.toString();
-}
-
-// Run command as in shell, show output and return nothing
-ext.runCommand = { cmd ->
-    def cmdLine = cmd.join(" ")
-    System.out.println(cmdLine)
-    def p = new ProcessBuilder(cmd).start()
-    p.consumeProcessOutput(System.out, System.err)
-    p.waitFor();
-    def exv = p.exitValue()
-    if (exv) {
-        throw new GradleException("${cmd[0]} failed with code ${exv} (see above)")
-    }
-}
-
 ext.projectRelativePath = {f ->
     return new File( file(".").toURI().relativize( f.toURI() ).toString() )
+}
+
+ext.getCmsbsPluginDistFile = { ->
+    def suffix = ''
+    if (pinuts.env != 'devel') suffix += '-' + pinuts.env
+    if (pinuts.version) suffix += '_' + pinuts.version
+    return new File(buildDir, pinuts.projectName + suffix + '.zip')
 }
 
 
@@ -276,21 +198,10 @@ task applyConfigDefaults(description: 'Applies sensible defaults', group: 'Pinut
             pinuts.um.localInstallerVarFile = file(project.ext.pinuts.um.localInstallerVarFile)
             pinuts.um.guiUrl = project.ext.pinuts.um.guiUrl ?: "http://" + InetAddress.getLocalHost().getHostName() + ":$pinuts.um.port/cmsbs"
             pinuts.um.pidFile = new File(project.ext.pinuts.um.serverHome, 'cmsbs.pid')
-
-            pinuts.logFiles << new File(pinuts.um.cmsbsWorkDir, 'server.log')
-            pinuts.logFiles << new File(pinuts.um.cmsbsWorkDir, 'cse.log')
-            pinuts.logFiles << new File(pinuts.um.cmsbsWorkDir, 'bounce.log')
-            pinuts.logFiles << new File(pinuts.um.cmsbsWorkDir, 'audit.log')
         }
 
-        def suffix = ''
-        if (pinuts.env != 'devel') suffix += '-' + pinuts.env
-        if (pinuts.version) suffix += '_' + pinuts.version
-        pinuts.distFilename = pinuts.distFilename ?: new File(buildDir, pinuts.projectName + suffix + '.zip')
+        pinuts.distFilename = getCmsbsPluginDistFile()
         pinuts.currentDistFile = new File(buildDir, 'current.zip');
-        if (!project.ext.pinuts.docfluenceVersion && pinuts.version) {
-            project.ext.pinuts.docfluenceVersion = getDocfluenceVersion()
-        }
 
         pinuts.docker.tag || (pinuts.docker.tag = pinuts.projectName.toLowerCase())
         if (pinuts.docker.tag.indexOf(':') == -1) {
@@ -371,11 +282,11 @@ task downloadUmLicense(description: 'Downloads the UM license file', group: 'pin
     }
 
     doLast {
-        def license = project.ext.pinuts.um.localLicenseFile
+        def license = pinuts.um.localLicenseFile
 
         if (!license.file) {
-            logger.quiet("${STYLE_DEBUG}Downloading license file from $project.ext.pinuts.um.license${STYLE_DEFAULT}")
-            license << new URL(project.ext.pinuts.um.license).text
+            logger.error("${STYLE_DANGER}Missing UM license file.${STYLE_DEFAULT}")
+            logger.error("${STYLE_DANGER}Manually put your license file to ${license} and run `gradle setup` again.${STYLE_DEFAULT}")
         }
     }
 }
@@ -531,31 +442,6 @@ task installUmPlugins(description: 'Installs UM plugins', group: 'pinuts') {
     }
 }
 
-
-task setupGitlabCi(description: 'Creates Gitlab CI-specific config files', group: 'pinuts') {
-    dependsOn applyConfigDefaults
-
-    onlyIf {
-        pinuts.um && System.getenv('CI_PROJECT_ID')
-    }
-
-    doLast {
-        def ciConfig = "cmsbs.test.resturl = " + pinuts.um.guiUrl + "/rest\n"
-        ciConfig += "cmsbs.rest.publicUrl = " + pinuts.um.guiUrl + "/rest\n"
-        ciConfig += "cmsbs.server.port = " + pinuts.um.port + "\n"
-
-        if (pinuts.um.persistentH2) {
-            def h2Path = "/var/lib/cmsbs/" + System.getenv('CI_PROJECT_ID') + "/db.h2"
-            logger.quiet "H2 database in $h2Path"
-            ciConfig += "cmsbs.database.url = jdbc:h2:$h2Path\n"
-        }
-
-        pinuts.um.confdDir.mkdirs()
-        def configFile = new File(pinuts.um.confdDir, "00_ci.properties")
-        configFile.write(ciConfig, 'latin1')
-    }
-}
-
 task startUm(description: 'Starts UM', group: 'pinuts') {
     dependsOn applyConfigDefaults, stopUm
 
@@ -583,7 +469,7 @@ task start(description: 'Starts UM (and optionally other services)', group: 'pin
 
 
 task setup(description: 'Installs UM and plugins', group: 'pinuts') {
-    dependsOn stop, installUm, installUmPlugins, setupGitlabCi
+    dependsOn stop, installUm, installUmPlugins
 }
 
 
@@ -617,31 +503,8 @@ task destroy(type: Delete, description: 'Stops and deletes UM and embedded datab
 }
 
 
-task distFileSanityCheck(description: 'Checks dist file for unexpected/dangerous files', group: 'pinuts') {
-    doLast {
-        def found = false
-        def zf = new java.util.zip.ZipFile(pinuts.distFilename)
-        zf.entries().findAll().each {
-            DIST_CHECK_UNEXPECTED_DIRECTORIES.each { dir ->
-                if (it.name.endsWith(dir) && (!pinuts.ignoreDistWarning || !pinuts.ignoreDistWarning.contains(it.name))) {
-                    logger.warn "${STYLE_DANGER}Found unexpected directory in dist file: ${it.name}${STYLE_DEFAULT}"
-                    found = true
-                }
-            }
-        }
-
-        if (found) {
-            logger.error "\n${STYLE_DANGER}Your dist file ${pinuts.distFilename} contains some potentially dangerous/unwanted directories.${STYLE_DEFAULT}"
-            logger.error "If this is really what you want, add the wanted directory names to `pinuts.ignoreDistWarning' and try again."
-            logger.error "If you want to avoid them in your dist file you can add a pattern matching them to a .distignore file."
-            throw new GradleException()
-        }
-    }
-}
-
 task dist(description: 'Builds the deployable (ZIP file)', group: 'pinuts') {
     dependsOn setup, prepareBuildDir
-    finalizedBy distFileSanityCheck
 
     doLast {
         def distignore = file('.distignore')
@@ -653,45 +516,28 @@ task dist(description: 'Builds the deployable (ZIP file)', group: 'pinuts') {
 
         // Das lokale 'cmsbs-conf/' kommt immer mit
         logger.quiet " ... cmsbs-conf/**"
-        ant.zip(destfile: pinuts.distFilename) {
-            zipfileset(dir: '.', includes: 'cmsbs-conf/**', excludesfile: distignore)
+        exec {
+            commandLine 'zip', '-9qr', '-x@.distignore', project.ext.pinuts.distFilename.path, 'cmsbs-conf'
         }
 
-        // Copy all files from all plugins we depend on:
-        for (def zipFile in configurations.runtime.resolve()) {
-            if (zipFile.name.matches(/.*\.(zip|ZIP)/)) {
-                logger.quiet " ... $zipFile.name${STYLE_DEFAULT}"
-
-                ant.zip(destfile: pinuts.distFilename, update: true) {
-                    zipfileset(src: zipFile, excludesfile: distignore)
-                }
-            }
-        }
-
-        // In extraDist koennten noch weitere Pfade benannt sein, einfach dazupacken
+        // In extraDist koennten noch weitere Pfade beannt sein, einfach dazupacken
         if (project.ext.pinuts.extraDist) {
             project.ext.pinuts.extraDist.each { dir ->
                 logger.quiet " ... " + dir
-                if (file(dir).directory) {
-                    ant.zip(destfile: pinuts.distFilename, update: true) {
-                        zipfileset(dir: '.', includes: "$dir/**", excludesfile: distignore)
-                    }
-                } else if (file(dir).file) {
-                    ant.zip(destfile: pinuts.distFilename, update: true) {
-                        zipfileset(dir: '.', includes: dir, excludesfile: distignore)
-                    }
-                } else {
-                    logger.error "\n${STYLE_DANGER}Directory or file from pinuts.extraDist does not exist: $dir${STYLE_DEFAULT}"
-                    throw new GradleException()
+                exec {
+                    commandLine 'zip', '-9qr', '-x@.distignore', project.ext.pinuts.distFilename.path, dir
                 }
             }
         }
 
         // Plugin-Zusamenstellung aus lokaler Installation zusammenpacken
         if (project.ext.pinuts.um && project.ext.pinuts.um.serverHome.isDirectory()) {
-            //
-            // DEPRECATED!
-            //
+            logger.quiet " ... ${projectRelativePath(pinuts.um.serverHome)}/cmsbs-conf/cse/plugins/**"
+
+            exec {
+                workingDir project.ext.pinuts.um.serverHome
+                commandLine 'zip', '-9qr', '-x@../.distignore', project.ext.pinuts.distFilename.path, 'cmsbs-conf/cse/plugins'
+            }
 
             // ... Alle Jar-Dateien, die Symlinks sind, wurden nachtraeglich eingefuegt (haessliche pfad-rechnereien)
             def command = ['zip', '-9qr', '-x@../.distignore', project.ext.pinuts.distFilename.path];
@@ -732,28 +578,15 @@ task dist(description: 'Builds the deployable (ZIP file)', group: 'pinuts') {
     }
 }
 
+publish.dependsOn << dist
+
 
 task updateBuildScript(description: 'Downloads latest version of `.umstarter.gradle` and `Kickstarter.md` from gitlab', group: 'pinuts') {
     doLast {
-        file('.umstarter.gradle').write(new URL('http://git.intra.pinuts.de/cmsbs-ci/umstarter/raw/master/.umstarter.gradle').text, 'UTF-8')
-
-        file('Kickstarter.md').write(new URL('http://git.intra.pinuts.de/cmsbs-ci/umstarter/raw/master/Kickstarter.md').text, 'UTF-8')
-    }
-}
-
-
-task tail(type: Exec, description: 'Shows relevant log files with `tail`', group: 'pinuts') {
-    dependsOn applyConfigDefaults
-
-    executable("tail")
-    args("-f")
-
-    if (isFamily(FAMILY_UNIX) && !isFamily(FAMILY_MAC)) {
-        args("--retry")
-    }
-
-    doFirst {
-        pinuts.logFiles.each {file -> args(file.path)}
+        file('.umstarter.gradle').write(new URL('https://gitext.pinuts.de/um-public/kickstarter/-/raw/master/.umstarter.gradle').text, 'UTF-8')
+        file('Kickstarter.md').write(new URL('https://gitext.pinuts.de/um-public/kickstarter/-/raw/master/Kickstarter.md').text, 'UTF-8')
+        file('Dockerfile').write(new URL('https://gitext.pinuts.de/um-public/kickstarter/-/raw/master/Dockerfile').text, 'UTF-8')
+        file('.docker-entrypoint.sh').write(new URL('https://gitext.pinuts.de/um-public/kickstarter/-/raw/master/.docker-entrypoint.sh').text, 'UTF-8')
     }
 }
 
@@ -783,7 +616,7 @@ task extractVersionFromGitBranch(type: Exec, description: 'Extracts git branch a
 
     doLast {
         if (pinuts.version == null || !pinuts.version.endsWith('-SNAPSHOT')) {
-            def ciBuildRefName = System.getenv('CI_COMMIT_REF_NAME');
+            def ciBuildRefName = System.getenv('CI_BUILD_REF_NAME');
             if (ciBuildRefName) {
                 pinuts.version = ciBuildRefName + '-SNAPSHOT'
             } else {
@@ -846,143 +679,6 @@ task vscode(description: 'Creates .eslintrc.yml and cmsbs-conf/cse/.vscode.js wi
 }
 
 
-task snapshot(type: Exec, description: 'Creates a deployable (ZIP file) and uploads it to Pinuts mavenrepo as a SNAPSHOT', group: 'pinuts') {
-    dependsOn dist, extractVersionFromGitBranch
-
-    def version = '';
-
-    doFirst {
-        if (!pinuts.version) throw new GradleException('Version not specified -- `pinuts.version` is null.')
-        if (!pinuts.projectName) throw new GradleException('Project Name not specified -- `pinuts.projectName` not set.')
-        if (!pinuts.groupId) throw new GradleException('Group ID not specified -- `pinuts.groupId` not set.')
-
-        version = pinuts.version.replace(/\//, '__')
-
-        executable('mvn')
-
-        args('deploy:deploy-file')
-        args('-Dfile=' + pinuts.distFilename.path)
-        args('-DrepositoryId=' + CMSBS_MAVENREPO_SNAPSHOTS)
-        args('-DgroupId=' + pinuts.groupId)
-        args('-DartifactId=' + pinuts.projectName)
-        args('-Dversion=' + version)
-        args('-Dpackaging=zip')
-        args('-Durl=' + CMSBS_MAVENREPO_SNAPSHOTS_URL)
-    }
-
-    doLast {
-        logger.quiet("\n    ${STYLE_SUCCESS}    Snapshot hochgeladen:  ${pinuts.groupId}:${pinuts.projectName}:${version}    ${STYLE_DEFAULT}")
-    }
-}
-
-
-task releaseTag(description: 'Set the current version as a git tag and push it.', group: 'pinuts') {
-    dependsOn applyConfigDefaults
-
-    doFirst {
-        if (!pinuts.version) throw new GradleException('Version not specified -- `pinuts.version` is null.')
-        exec {
-            commandLine "git", "tag", "-am", "Release" , pinuts.version
-        }
-        exec {
-            commandLine "git", "push", "--tags"
-        }
-    }
-}
-
-
-task release(type: Exec, description: 'Creates a deployable (ZIP file) and uploads it to Pinuts mavenrepo as a RELEASE', group: 'pinuts') {
-    dependsOn dist
-
-    def version = '';
-
-    doFirst {
-        if (!pinuts.version) throw new GradleException('Version not specified -- `pinuts.version` is null.')
-        if (!pinuts.projectName) throw new GradleException('Project Name not specified -- `pinuts.projectName` not set.')
-        if (!pinuts.groupId) throw new GradleException('Group ID not specified -- `pinuts.groupId` not set.')
-
-        if (System.getenv('CI_PROJECT_ID') == null) {
-            ant.input(message: "${STYLE_DANGER} Wirklich als Version `$pinuts.version` ins MavenRepo hochladen? ${STYLE_DEFAULT}", validargs: 'j,y,n', addproperty: 'doRelease')
-
-            if (ant.doRelease != 'j' && ant.doRelease != 'y') {
-                throw new GradleException("Abgebrochen")
-            }
-        }
-
-        version = pinuts.version.replace(/\//, '__')
-
-        executable('mvn')
-
-        args('deploy:deploy-file')
-        args('-Dfile=' + pinuts.distFilename.path)
-        args('-DrepositoryId=' + CMSBS_MAVENREPO_RELEASES)
-        args('-DgroupId=' + pinuts.groupId)
-        args('-DartifactId=' + pinuts.projectName)
-        args('-Dversion=' + version)
-        args('-Dpackaging=zip')
-        args('-Durl=' + CMSBS_MAVENREPO_RELEASES_URL)
-    }
-
-    doLast {
-        logger.quiet("\n    ${STYLE_SUCCESS}    Release hochgeladen:  ${pinuts.groupId}:${pinuts.projectName}:${version}    ${STYLE_DEFAULT}")
-    }
-}
-
-
-task publicRelease(type: Exec, description: 'Publishes the the deployable to the (semi) public Maven Repo', group: 'pinuts') {
-    dependsOn dist
-
-    def version = '';
-
-    doFirst {
-        def repoId       = System.getenv('PINUTS_PUBLIC_MAVENREPO_ID') ?: 'io.cloudrepo'
-        def repoUrl      = System.getenv('PINUTS_PUBLIC_MAVENREPO_URL') ?: 'https://pinuts.mycloudrepo.io/repositories/um'
-        def repoUsername = System.getenv('PINUTS_PUBLIC_MAVENREPO_USERNAME')
-        def repoPassword = System.getenv('PINUTS_PUBLIC_MAVENREPO_PASSWORD')
-
-        if (!pinuts.version) throw new GradleException('Version not specified -- `pinuts.version` is null.')
-        if (!pinuts.projectName) throw new GradleException('Project Name not specified -- `pinuts.projectName` not set.')
-        if (!pinuts.groupId) throw new GradleException('Group ID not specified -- `pinuts.groupId` not set.')
-        if (pinuts.env == 'devel') throw new GradleException('You probably don\'t want to publish your `devel` deployable! Pass `-Penv=prod`...')
-        if (!repoUsername || !repoPassword) throw new GradleException("Missing credentials for pushing to public repo ${repoUrl}: PINUTS_PUBLIC_MAVENREPO_USERNAME / PINUTS_PUBLIC_MAVENREPO_PASSWORD not set.")
-
-        def mvnSettingsXml = """<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
-  http://maven.apache.org/xsd/settings-1.0.0.xsd">
-  <servers>
-    <server>
-      <id>${repoId}</id>
-      <username>${repoUsername}</username>
-      <password>${repoPassword}</password>
-    </server>
-  </servers>
-</settings>
-""";
-        def mvnSettigsFile = file('.mvn-settings.xml')
-        mvnSettigsFile.delete()
-        mvnSettigsFile << mvnSettingsXml
-
-        executable('mvn')
-
-        args('deploy:deploy-file')
-        args('-s')
-        args(mvnSettigsFile.path)
-        args('-Dfile=' + pinuts.distFilename.path)
-        args('-DrepositoryId=' + repoId)
-        args('-DgroupId=' + pinuts.groupId)
-        args('-DartifactId=' + pinuts.projectName)
-        args('-Dversion=' + pinuts.version)
-        args('-Dpackaging=zip')
-        args('-Durl=' + repoUrl)
-    }
-
-    doLast {
-        logger.quiet("\n    ${STYLE_SUCCESS}    Release in öffentliches Repo hochgeladen:  ${pinuts.groupId}:${pinuts.projectName}:${pinuts.version}    ${STYLE_DEFAULT}")
-    }
-}
-
-
 ext.downloadFile = {url, filename ->
     if (!file(filename).isFile()) {
         logger.quiet("${STYLE_DEBUG}Downloading $filename from $url${STYLE_DEFAULT}")
@@ -1017,432 +713,6 @@ task dockerImage(type: Exec, description: 'Creates a docker image containing thi
     }
 }
 
-
-task dockerize(description: 'Creates Dockerfile and docker-entrypoint.sh', group:'pinuts') {
-    dependsOn applyConfigDefaults
-
-    def dockerfile = file('Dockerfile')
-    def dockerignore = file('.dockerignore')
-    def dockerEntrypoint = file('.docker-entrypoint.sh')
-    def varfile = file('.um.varfile')
-
-    doLast {
-        logger.quiet("${STYLE_NORMAL}Generating ${dockerfile}...${STYLE_DEFAULT}")
-        dockerfile.write(
-    """FROM openjdk:11.0-jdk
-
-RUN adduser --system --disabled-password --home /UM --shell /bin/bash --uid 102 um
-
-COPY --chown=um:nogroup build/UM-current.sh .um.varfile /
-COPY --chown=um:nogroup .docker-entrypoint.sh /UM/docker-entrypoint.sh
-RUN chmod +x /UM/docker-entrypoint.sh
-
-WORKDIR /UM
-USER um
-
-# Persist certain config files:
-RUN mkdir /UM/.install4j
-RUN sh /UM-current.sh -q -dir ~ -varfile /.um.varfile
-RUN echo "cmsbs.gui.login = internal\\ncmsbs.database.url=jdbc:h2:/UM/cmsbs-work/db.h2\\ncmsbs.log.allFilesToStdout = true\\ncmsbs.directory.listen.syncWithVfs = true\\ninclude.1 = cmsbs-conf/docker.properties" >> /UM/cmsbs-conf/cmsbs.properties
-RUN sed -i /UM/scripts/.umrc -e 's/LC_CTYPE=.*/# Removed by Dockerfile/'
-
-# ----------------------------------------------------
-
-FROM openjdk:11.0-jdk
-
-EXPOSE 8080
-
-RUN adduser --system --disabled-password --home /UM --shell /bin/bash --uid 102 um
-ENV TZ=Europe/Berlin
-ENV LC_LOCALE=C.UTF-8
-
-COPY --chown=um:nogroup --from=0 /UM /UM/
-COPY --chown=um:nogroup ${projectRelativePath(pinuts.currentDistFile)} /UM/um-project.zip
-
-VOLUME [ "/UM/cmsbs-work" ]
-
-ENTRYPOINT ["/UM/docker-entrypoint.sh"]
-""", 'UTF-8')
-
-        logger.quiet("${STYLE_NORMAL}Generating ${varfile}...${STYLE_DEFAULT}")
-        varfile.write("""
-tomcat_setup\$Boolean=false
-database_setup\$Boolean=false
-license_setup\$Boolean=false
-email_setup\$Boolean=false
-smtp_setup\$Boolean=false
-imap_setup\$Boolean=false
-
-# Embedded Tomcat
-sys.component.238614\$Boolean=true
-""", 'UTF-8')
-
-
-
-        logger.quiet("${STYLE_NORMAL}Generating ${dockerEntrypoint}...${STYLE_DEFAULT}")
-        dockerEntrypoint.write(
-    """#!/bin/bash -e
-
-create_docker_properties_file() {
-    f=\$1
-    echo "* Creating \$f"
-    echo -n > \$f
-
-    for line in `env | egrep '^cmsbs'`; do
-        value=`echo \$line | sed -e 's/\\([^=]*\\)=\\(.*\\)/\\2/'`
-        value=`echo \$value | sed -e 's/["\\\\]/\\\\\\0/g'`
-        key=`echo \$line | sed -e 's/\\([^=]*\\)=\\(.*\\)/\\1/'`
-        key_subst=`echo \$key | sed -e 's/__/./g'`
-        echo "\$key_subst=\\"\$value\\"" >> \$f
-    done
-
-    return 0
-}
-
-create_docker_properties_file "/UM/cmsbs-conf/docker.properties"
-
-# unzip project ZIP file
-# This needs to be done at runtime because the ZIP might contain cmsbs-work/webapps/
-# that otherwise would not be overwritten.
-set +e
-unzip_cmd="unzip -o \$UM_UNZIP_OPTIONS um-project.zip -x \$UM_UNZIP_EXCLUDES"
-(cd /UM && test -f um-project.zip && bash -c "\$unzip_cmd")
-set -e
-
-mkdir -p /UM/cmsbs-work/webapps/ROOT
-chown -R um /UM/cmsbs-work
-
-rm -f /UM/cmsbs.pid /UM/cmsbs-conf/conf.d/00_ci.properties
-
-if [ -n "\$UM_STARTUP_DELAY" ]; then
-    echo "* Waiting for \$UM_STARTUP_DELAY seconds"
-    sleep \$UM_STARTUP_DELAY
-fi
-
-cd /UM/scripts
-ln -sf /UM/cmsbs-conf/cmsbs.properties
-
-echo "* Running schemaUpdate.sh"
-set +e
-retries_left=\${UM_RETRY_SCHEMAUPDATE:-0}
-while :
-do
-    su um -c "./schemaUpdate.sh cmsbs.properties upgrade"
-    rc=\$?
-    if [ \$rc != 12 -o \$retries_left == 0 ]; then break; fi
-    retries_left=`expr \$retries_left - 1`
-    echo "* Retrying schemaUpdate.sh after 5 seconds"
-    sleep 5
-done
-set -e
-
-if [ \$rc == 0 ]; then
-    echo "   Schema successfully upgraded."
-elif [ \$rc == 3 ]; then
-    echo "   No schema upgrade needed."
-else
-    echo "   Schema upgrade failed with exit code: \$rc"
-fi
-
-if [ -n "\$UM_ADMIN_USERNAME" ]; then
-    echo "* Creating admin user"
-    echo -e "\${UM_ADMIN_USERNAME}\\n\${UM_ADMIN_PASSWORD}\\n" | su um -c "./userTool.sh cmsbs.properties -admin"
-fi
-
-if [ -z "\$@" ]; then
-    echo "* Starting UM: \$@"
-    exec su um -c "./run.sh"
-else
-    exec \$@
-fi
-""", 'UTF-8')
-
-        logger.quiet("${STYLE_NORMAL}Generating ${dockerignore}...${STYLE_DEFAULT}")
-        dockerignore.delete()
-        dockerignore.write(
-    """/UM/cmsbs-work/*
-/UM/.install4j
-/UM/NextSteps.txt
-/UM/uninstall
-""", 'UTF-8')
-    }
-}
-
-
-/* ============================================= Git Methods ============================ */
-
-def gitclone(path,repo) {
-    logger.quiet "${STYLE_IMPORTANT}git clone $repo.clone -b $repo.branch $repo.name ${STYLE_DEFAULT}"
-    exec {
-        workingDir path
-        commandLine 'git', 'clone', repo.clone, '-b', repo.branch, repo.name
-    }
-}
-
-def gitpull(path,repo) {
-    logger.quiet "${STYLE_IMPORTANT}$path > git pull && git checkout $repo.branch && git pull${STYLE_DEFAULT}"
-    exec {
-        workingDir path
-        commandLine 'git', 'pull'
-    }
-    exec {
-        workingDir path
-        commandLine 'git', 'checkout', repo.branch
-    }
-    exec {
-        workingDir path
-        commandLine 'git', 'pull'
-    }
-}
-
-def gitstatus(path) {
-    logger.quiet "${STYLE_IMPORTANT}cd $path && git status${STYLE_DEFAULT}"
-    exec {
-        workingDir path
-        commandLine 'git', 'status'
-    }
-}
-
-
-/* ============================================= Pinuts UM Git Plugins ============================
-
-Projektspezifische Plugins aus dem GIT ziehen und versymlinken (nicht Mavenrepo und keine Kopie in cmsbs-conf/cse/plugins)
-Beispiel fuer build.gradle
-
-pinuts.gitPlugins = [
-  [ clone: 'git@git:cmsbs-plugins/auth2.git' ],
-  [ clone: 'git@git:cmsbs-plugins/solr.git' ],
-  [ clone: 'git@git:cmsbs/libplugin.git', branch: 'hbsauthpoc']
-]
-
-*/
-
-task applyConfigGitPlugins {
-    onlyIf {
-        pinuts.gitPlugins
-    }
-    doLast {
-        pinuts.gitPlugins.each { plugin ->
-            // name aus git url extrahieren
-            plugin.name = plugin.name ? plugin.name : plugin.clone.substring(plugin.clone.lastIndexOf('/')+1, plugin.clone.lastIndexOf('.git'))
-            // default git branch: master
-            plugin.branch = plugin.branch ? plugin.branch : 'master'
-        }
-    }
-}
-
-task linkplugins(description: 'Creates symlinks to UM git plugins', group: 'Pinuts UM git plugins') {
-    dependsOn applyConfigDefaults, applyConfigGitPlugins
-    onlyIf {
-        pinuts.gitPlugins && pinuts.gitPluginsDir
-    }
-    doLast {
-        pinuts.gitPlugins.each { plugin ->
-            def path = "${pinuts.gitPluginsDir}/${plugin.name}"
-            if (file(path).exists()) {
-                // Plugins
-                new File(path).eachDir { source ->
-                    if (source.name.startsWith('the_plugin')) {
-                        def pathToPlugin = "${path}/${Files.readSymbolicLink(source.toPath())}"
-                        relLn(pathToPlugin, pinuts.um.pluginsDir)
-                    }
-                }
-                // JARs
-                fileTree(path).include('the_jar*').each { source ->
-                    def pathToJar = "${path}/${Files.readSymbolicLink(source.toPath())}"
-                    relLn(pathToJar, pinuts.um.libDir)
-                }
-            }
-        }
-    }
-}
-
-task cloneplugins(description: 'Clones UM git plugins', group: 'Pinuts UM git plugins') {
-    dependsOn applyConfigGitPlugins
-    onlyIf {
-        pinuts.gitPlugins && pinuts.gitPluginsDir
-    }
-    doLast {
-        new File(pinuts.gitPluginsDir).mkdirs()
-        pinuts.gitPlugins.each { plugin ->
-            if (!file("${pinuts.gitPluginsDir}/${plugin.name}").exists()) {
-                gitclone(pinuts.gitPluginsDir, plugin)
-            }
-        }
-    }
-}
-
-task pullplugins(description: 'Pulls UM git plugins', group:'Pinuts UM git plugins') {
-    dependsOn applyConfigGitPlugins
-    onlyIf {
-        pinuts.gitPlugins && pinuts.gitPluginsDir
-    }
-    doLast {
-        pinuts.gitPlugins.each { plugin ->
-            def path = "$pinuts.gitPluginsDir/$plugin.name"
-            if (file(path).exists()) {
-                gitpull(path, plugin)
-            }
-        }
-    }
-}
-
-task statusplugins(description: 'Status of UM git plugins', group: 'Pinuts UM git plugins') {
-    dependsOn applyConfigGitPlugins
-    onlyIf {
-        pinuts.gitPlugins && pinuts.gitPluginsDir
-    }
-    doLast {
-        pinuts.gitPlugins.each { plugin ->
-            def path = "${pinuts.gitPluginsDir}/${plugin.name}"
-            if (file(path).exists()) {
-                gitstatus(path)
-            }
-        }
-    }
-}
-
-task gitplugins(description: 'cloneplugins, pullplugins, linkplugins') {
-    dependsOn cloneplugins, pullplugins, linkplugins
-}
-
-task deleteplugins(type: Delete, description: 'Deletes UM git plugins folder', group: 'Pinuts UM git plugins') {
-    onlyIf {
-        pinuts.gitPluginsDir
-    }
-    delete file(pinuts.gitPluginsDir)
-    followSymlinks = false
-}
-
-
-/* ============================================= Pinuts Git HTML Dummy ============================
-
-// HTML Dummy aus anderen GIT Repo
-pinuts.gitHtml.clone = 'git@git:hbs/stufoe.git'
-//pinuts.gitHtml.branch: 'master'
-//pinuts.gitHtml.build: 'gulp' // gulp|grunt
-//pinuts.gitHtml.srcPath: 'html'
-//pinuts.gitHtml.distPath: 'html/dist'
-
-*/
-
-task applyConfigGitHtml {
-    onlyIf {
-        pinuts.gitHtml
-    }
-    doLast {
-        if (pinuts.gitHtml.clone) {
-            def gitHtml = pinuts.gitHtml
-            // name aus git url extrahieren
-            gitHtml.name = gitHtml.name ? gitHtml.name : gitHtml.clone.substring(gitHtml.clone.lastIndexOf('/')+1, gitHtml.clone.lastIndexOf('.git'))
-        }
-    }
-}
-
-task buildhtml(description: 'Builds UM Git html', group: 'Pinuts UM git html') {
-    dependsOn applyConfigGitHtml
-    onlyIf {
-        pinuts.gitHtml && pinuts.gitHtml.build
-    }
-    doLast {
-        def path = "$pinuts.gitHtml.dir/$pinuts.gitHtml.name/$pinuts.gitHtml.srcPath"
-        if (file(path).exists()) {
-            logger.quiet STYLE_IMPORTANT + "Build HTML from $path with build tool: $pinuts.gitHtml.build" + STYLE_DEFAULT
-
-            if (pinuts.gitHtml.build == 'gulp' || pinuts.gitHtml.build == 'grunt') {
-
-                // npm install
-                def command = ['npm', 'install']
-                def p = command.execute(null, file(path))
-                p.waitFor()
-                if (p.exitValue() != 0) {
-                    throw new GradleException(FG_COLOR_RED + 'HTML build faild with exit code ' + p.exitValue() + ': ' + command.join(' ') + '\n' + p.inputStream.text + p.errorStream.text + STYLE_DEFAULT)
-                }
-                // gulp / grunt
-                command = [pinuts.gitHtml.build]
-                p = command.execute(null, file(path))
-                p.waitFor()
-                if (p.exitValue() != 0) {
-                    throw new GradleException(FG_COLOR_RED + 'HTML build faild with exit code ' + p.exitValue() + ': ' + command.join(' ') + '\n' + p.inputStream.text + p.errorStream.text + STYLE_DEFAULT)
-                }
-            } else {
-                throw new GradleException(FG_COLOR_RED + "HTML build faild: please use 'gulp' or 'grunt' for pinuts.gitHtml.build. It's set to: " + pinuts.gitHtml.build + STYLE_DEFAULT)
-            }
-        }
-    }
-}
-
-task linkhtml(description: 'Creates symlink to UM root dir for git html folder', group:'Pinuts UM git html') {
-    dependsOn applyConfigDefaults, applyConfigGitHtml
-    onlyIf {
-        pinuts.gitHtml && pinuts.um
-    }
-    doLast {
-        def path = "$pinuts.gitHtml.dir/$pinuts.gitHtml.name/$pinuts.gitHtml.distPath"
-        if (file(path).exists()) {
-            fileTree(path).include('/*').each { source ->
-                relLn(source, pinuts.um.webappsRootDir)
-            }
-            new File(path).eachDir { source ->
-                relLn(source, pinuts.um.webappsRootDir)
-            }
-        }
-    }
-}
-
-task clonehtml(description: 'Clones UM git html', group:'Pinuts UM git html') {
-    dependsOn applyConfigGitHtml
-    onlyIf {
-        pinuts.gitHtml
-    }
-    doLast {
-        new File(pinuts.gitHtml.dir).mkdirs()
-        if (!file("$pinuts.gitHtml.dir/$pinuts.gitHtml.name").exists()) {
-            gitclone(pinuts.gitHtml.dir, pinuts.gitHtml)
-        }
-    }
-}
-
-task pullhtml(description: 'Pulls UM git html', group:'Pinuts UM git html') {
-    dependsOn applyConfigGitHtml
-    onlyIf {
-        pinuts.gitHtml
-    }
-    doLast {
-        def path = "$pinuts.gitHtml.dir/$pinuts.gitHtml.name"
-        if (file(path).exists()) {
-            gitpull(path, pinuts.gitHtml)
-        }
-    }
-}
-
-task statushtml(description: 'Status of UM git html', group:'Pinuts UM git html') {
-    dependsOn applyConfigGitHtml
-    onlyIf {
-        pinuts.gitHtml
-    }
-    doLast {
-        def path = "$pinuts.gitHtml.dir/$pinuts.gitHtml.name"
-        if (file(path).exists()) {
-            gitstatus(path)
-        }
-    }
-}
-
-task githtml(description: 'clonehtml, pullhtml, buildhtml, linkhtml', group: 'Pinuts UM git html') {
-    dependsOn clonehtml, pullhtml, buildhtml, linkhtml
-}
-pullhtml.mustRunAfter clonehtml
-buildhtml.mustRunAfter pullhtml
-linkhtml.mustRunAfter buildhtml
-
-task deletehtml(type: Delete, description: 'Deletes UM git html folder', group: 'Pinuts UM git html') {
-    onlyIf {
-        pinuts.gitHtml.dir
-    }
-    delete file(pinuts.gitHtml.dir)
-    followSymlinks = false
-}
 
 /* ============================================= Automatische Tests ============================ */
 
@@ -1485,530 +755,6 @@ task flushLocalData(description: 'Empties cmsbs-work/ directory.', group: 'Pinut
         delete new File(pinuts.um.cmsbsWorkDir, 'db.h2.trace.db')
         fileTree(pinuts.um.cmsbsWorkDir).include('*.log').each { source ->
             delete source
-        }
-    }
-}
-
-
-task testAllDbs(description: 'Runs testDriver_umci tests on all databases', group: 'Pinuts') {
-    doLast {
-        def numDbs = 0
-
-        System.getenv().each{ k, v ->
-            if (k.startsWith('UM_DB_')) {
-                def dbName = k.substring(6)
-                def (jdbcUrl, username, password) = v.split('\\|')
-
-                numDbs ++
-                logger.quiet("")
-                logger.quiet("**********************************************************************************")
-                logger.quiet("    UMCI Tests on ${dbName}")
-                logger.quiet("**********************************************************************************")
-                logger.quiet("")
-
-                logger.quiet("Preparing UM for tests on ${dbName}")
-
-                def setupProcess = new ProcessBuilder(["gradle", "setup"])
-                    .start()
-                setupProcess.inputStream.eachLine {logger.quiet it}
-                setupProcess.errorStream.eachLine {logger.error it}
-                setupProcess.waitForOrKill(90000)
-                def setupRc = setupProcess.exitValue()
-
-                if (setupRc != 0) throw new GradleException("Test setup failed for ${dbName}")
-
-                def ciConfig = "cmsbs.database.url = " + jdbcUrl + "\n"
-                ciConfig += "cmsbs.database.user = " + username + "\n"
-                ciConfig += "cmsbs.database.password = " + password + "\n"
-
-                def configFile = file("UM/cmsbs-conf/conf.d/01_ci_db.properties")
-                configFile.write(ciConfig, 'latin1')
-
-                logger.quiet("Dropping TABLEs and VIEWs on ${dbName}")
-                def flushProcess = new ProcessBuilder(["./schemaUpdate.sh", "cmsbs.properties", "dropAllTables"])
-                    .directory(file('UM/scripts'))
-                    .start()
-                flushProcess.inputStream.eachLine {logger.quiet it}
-                flushProcess.errorStream.eachLine {logger.error it}
-                flushProcess.waitForOrKill(60000)
-                def flushRc = flushProcess.exitValue()
-
-                if (flushRc != 0) throw new GradleException("Dropping TABLEs and VIEWs on ${dbName} failed")
-
-                logger.quiet("Running tests on ${dbName}")
-                def testProcess = new ProcessBuilder(["gradle", "test"])
-                    .start()
-                testProcess.inputStream.eachLine {logger.quiet it}
-                testProcess.errorStream.eachLine {logger.error it}
-                testProcess.waitForOrKill(120000)
-                def testRc = testProcess.exitValue()
-
-                if (testRc != 0) throw new GradleException("Tests failed for ${dbName}")
-            }
-        }
-
-        if (numDbs == 0) {
-            throw new GradleException("No databases found in environment variables. Define at least one like this:\n    export UM_DB_xxx=JDBCURL|USER|PASSWORD")
-        }
-    }
-}
-
-
-// test.dependsOn << testDriver_umci
-
-/* ============================================= Doku-Generierung ============================ */
-
-ext.docfluence_URL = "http://docfluence" // currently only URL supported
-ext.docfluence_USER = "admin"
-ext.docfluence_PASS = "55yt9.;bb"
-
-ext.docfluence_presetPDF = [
-    UM_DE: 'C0A82A2A013F668DFAD994E10FE20561',
-    UM_EN: 'C0A82A2A013F668F6B4F3C233032D0E1',
-    OT_DE: 'C0A82A2A013F6675587F90864CE2443B',
-    OT_EN: 'C0A82A2A013F6683A0734337295214C9',
-    //FS_DE: 'C0A82A2A013F668DFAD994E10FE20561', // Gibt es so gar nicht
-    //FS_EN: 'C0A82A2A013F668F6B4F3C233032D0E1', // Gibt es so gar nicht
-]
-ext.docfluence_presetHTML = [ // Es gibt gar nicht alle
-    UM_DE: 'C0A82A2A0144B6FEEA32EDBC4734A5CD',
-    UM_EN: 'C0A82A2A0144B6FEEA32EDBC4734A5CD',
-]
-
-def docfluence() {
-    return configure {
-        request.uri = docfluence_URL
-        request.uri.path = '/'
-    }
-}
-
-def docfluence_json(json) {
-    // Map etc -> String -> String
-    return groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(json))
-}
-
-def docfluence_startScrollExport(startPage, presetId, product, outputFile) {
-    logger.quiet("${STYLE_DEBUG}docfluence: Initiating export of page $startPage with preset $presetId ... ${STYLE_DEFAULT}")
-
-    def exportTaskId = docfluence().get {
-        request.uri.path = "/rest/${product}/1.0/export"
-        request.uri.query.presetId = presetId
-        request.uri.query.pageId = startPage
-        request.uri.query.os_username = docfluence_USER
-        request.uri.query.os_password = docfluence_PASS
-    }
-    // logger.quiet("${STYLE_DEBUG}docfluence: ... $exportTaskId ${STYLE_DEFAULT}")
-
-    def wait = true
-    while (wait) {
-        wait = docfluence().get { // json or binary
-            request.uri.path = "/rest/${product}/1.0/export/${exportTaskId}"
-            request.uri.query.os_username = docfluence_USER
-            request.uri.query.os_password = docfluence_PASS
-
-            response.when(202) { FromServer fs, body ->
-                logger.quiet("${STYLE_DEBUG}docfluence:  Waiting ...                          ${STYLE_DEFAULT}")
-                return true;
-            }
-
-            response.when(200) { FromServer fs, body ->
-                logger.quiet("${STYLE_DEBUG}docfluence: ... $outputFile (${body.length} b)${STYLE_DEFAULT}")
-                outputFile.setBytes((byte[])body)
-                return false;
-            }
-        }
-        sleep (1000)
-    }
-}
-
-def docfluence_getSpaceName(spaceKey) {
-    def xml = docfluence().get() { // xml
-        request.uri.path = "/rest/prototype/1/space/$spaceKey"
-        request.uri.query.os_username = docfluence_USER
-        request.uri.query.os_password = docfluence_PASS
-    }
-    return xml['@name'].text(); // <space ...
-}
-
-def docfluence_getSpaceHomePageId(spaceKey) {
-    def xml = docfluence().get() { // xml
-        request.uri.path = "/rest/prototype/1/space/$spaceKey"
-        request.uri.query.os_username = docfluence_USER
-        request.uri.query.os_password = docfluence_PASS
-    }
-    // logger.error(xml.toString());
-    return xml['home']['@id'].text(); // <home ...
-}
-
-def docfluence_getMasterVersionIdForSpace(spaceKey) {
-    def json = docfluence().get() { // json
-        request.uri.path = "/rest/scroll-versions/1.0/versions/$spaceKey"
-        request.uri.query.os_username = docfluence_USER
-        request.uri.query.os_password = docfluence_PASS
-    }
-    def master = json.find { it -> it.name == 'master' };
-    if (master)
-        return master.id;
-    logger.error(docfluence_json(json))
-    throw new GradleException("docfluence: Wrong type of space: ${spaceKey}, no master.")
-}
-
-def docfluence_waitForAsyncTask(id) {
-    // logger.quiet("${STYLE_DEBUG}docfluence: ... $id ${STYLE_DEFAULT}")
-    while (true) {
-        def json = docfluence().get() { // json
-        request.uri.path = "/rest/scroll-versions/1.0/async-tasks/$id"
-            request.uri.query.os_username = docfluence_USER
-            request.uri.query.os_password = docfluence_PASS
-        }
-
-        logger.quiet("${STYLE_DEBUG}docfluence:  Waiting (${json.progress} %)...                    ${STYLE_DEFAULT}")
-        if (json.finished)
-            return json;
-        sleep(1000)
-    }
-}
-
-
-def docfluence_checkSpaceNotDirty(spaceKey, spaceName, masterVersionId) {
-    logger.quiet("${STYLE_DEBUG}docfluence: Checking if space ${spaceKey} \"${spaceName}\" is dirty ... ${STYLE_DEFAULT}")
-
-    def json = docfluence().post() { // json
-        request.uri.path = "/rest/scroll-versions/1.0/publish/${spaceKey}/version/${masterVersionId}/to_same/preview"
-        request.uri.query.os_username = docfluence_USER
-        request.uri.query.os_password = docfluence_PASS
-        request.contentType = "application/json"
-        request.body = [
-            copyLabels: true,
-            keepAuthorsAndDates: true,
-            removeAttachments: false,
-            sendEmail: false,
-            targetSpaceKey: spaceKey,
-            targetSpaceName: spaceName
-        ]
-    }
-
-    def id = json.id;
-    if (!id || json.hasFailed)
-        throw new GradleException("checkSpaceNotDirty: Some things went wrong :(")
-
-    json = docfluence_waitForAsyncTask(id)
-    // logger.error(docfluence_json(json))
-
-    def messages = json.result.status.messages; // must be empty
-    if (messages) {
-        throw new GradleException("docfluence: Dirty space ${spaceKey} \"${spaceName}\": " + docfluence_json(messages))
-    }
-}
-
-def docfluence_deleteSpace(spaceKey) {
-    logger.quiet("${STYLE_DEBUG}docfluence: Deleting ${spaceKey} ... ${STYLE_DEFAULT}")
-
-    // FIXME: Encoding-Probleme
-    def url = docfluence_URL + "/rpc/json-rpc/confluenceservice-v2?os_username=" + docfluence_USER + "&os_password=" + docfluence_PASS
-    HttpURLConnection con = new URL(url).openConnection()
-    con.setRequestMethod("POST")
-    con.setDoOutput(true)
-    con.setRequestProperty("Content-Type", "application/json") // _genau_ so!
-    def data = "{\"jsonrpc\":\"2.0\",\"method\":\"removeSpace\",\"params\":[\"${spaceKey}\"]}".bytes;
-    con.setRequestProperty("Content-Length", "" + data.length)
-    def out = con.getOutputStream()
-    out.write(data)
-    out.close()
-
-    // Note: Keine sinnvolle Fehlersignalisierung
-    def responseCode = con.getResponseCode()
-    if (responseCode != 200)
-        throw new GradleException("docfluence_deleteSpace: Failed: ${responseCode}")
-
-    /* // Es haette so einfach ein koennen:
-    def json = docfluence().post() {
-        request.uri.path = "/rpc/json-rpc/confluenceservice-v2"
-        request.uri.query.os_username = docfluence_USER
-        request.uri.query.os_password = docfluence_PASS
-        request.contentType = "application/json" // FIXME: das ";charset=UTF-8" ist zuviel - W-T-F
-        request.body = [
-            jsonrpc: "2.0",
-            method: "removeSpace",
-            params: [ spaceKey ]
-        ]
-    }
-    logger.error(docfluence_json(json))
-    */
-
-    if (docfluence_testSpaceExists(spaceKey))
-        throw new GradleException("docfluence_deleteSpace: Failed to delete: ${spaceKey}")
-}
-
-def docfluence_testSpaceExists(spaceKey) {
-    return docfluence().head() { // .get() macht schlimme sachen
-        request.uri.path = "/rest/prototype/1/space/${spaceKey}"
-        request.uri.query.os_username = docfluence_USER
-        request.uri.query.os_password = docfluence_PASS
-
-        response.failure { false }
-        response.success { true }
-    }
-}
-
-def docfluence_setSpaceBranding(spaceKey, umVersion) {
-    logger.quiet("${STYLE_DEBUG}docfluence: Switching ${spaceKey} to ${umVersion}... ${STYLE_DEFAULT}")
-
-    // FIXME: Encoding-Probleme
-    def url = docfluence_URL + "/rpc/json-rpc/pi-um-produktversion-rpc/setUMName?os_username=" + docfluence_USER + "&os_password=" + docfluence_PASS
-    HttpURLConnection con = new URL(url).openConnection()
-    con.setRequestMethod("POST")
-    con.setDoOutput(true)
-    con.setRequestProperty("Content-Type", "application/json")
-    def data = "[\"${spaceKey}\", \"${umVersion}\", \"live\"]".bytes;
-    con.setRequestProperty("Content-Length", "" + data.length)
-    def out = con.getOutputStream()
-    out.write(data)
-    out.close()
-
-    // Note: Keine sinnvolle Fehlersignalisierung
-    def responseCode = con.getResponseCode()
-    if (responseCode != 200)
-        throw new GradleException("docfluence_setSpaceBranding: Failed: ${responseCode}")
-
-    /* // Es haette so einfach ein können:
-    def rs = docfluence().post() {
-        request.uri.path = "/rpc/json-rpc/pi-um-produktversion-rpc/setUMName"
-        request.uri.query.os_username = docfluence_USER
-        request.uri.query.os_password = docfluence_PASS
-        request.body = [ spaceKey, umVersion, "live" ]
-
-        //response.parser('') { cfg, FromServer fs -> fs.inputStream.text }
-    }
-    */
-}
-
-
-def docfluence_startSpaceSelfPublish(spaceKey, spaceName, masterVersionId) {
-    logger.quiet("${STYLE_DEBUG}docfluence: Publishing ${spaceKey} \"${spaceName}\" ... ${STYLE_DEFAULT}")
-
-    def json = docfluence().post() { // json
-        request.uri.path = "/rest/scroll-versions/1.0/publish/${spaceKey}/version/${masterVersionId}/to_same/publish"
-        request.uri.query.os_username = docfluence_USER
-        request.uri.query.os_password = docfluence_PASS
-        request.contentType = "application/json"
-        request.body = [
-            copyLabels: true,
-            keepAuthorsAndDates: true,
-            removeAttachments: false,
-            sendEmail: false,
-            targetSpaceKey: spaceKey,
-            targetSpaceName: spaceName
-        ]
-    }
-
-    def id = json.id;
-    if (!id || json.hasFailed)
-        throw new GradleException("startSpaceSelfPublish: Some things went wrong :(")
-
-    json = docfluence_waitForAsyncTask(id)
-    // logger.error(docfluence_json(json))
-}
-
-def docfluence_startSpaceExport(spaceKey, spaceName, masterVersionId, newSpaceKey, newSpaceName) {
-    logger.quiet("${STYLE_DEBUG}docfluence: Exporting ${spaceKey} \"${spaceName}\" ... ${newSpaceKey} \"${newSpaceName}\" ${STYLE_DEFAULT}")
-
-    def json = docfluence().post() { // json
-        request.uri.path = "/rest/scroll-versions/1.0/publish/${spaceKey}/version/${masterVersionId}/to_new/publish"
-        request.uri.query.os_username = docfluence_USER
-        request.uri.query.os_password = docfluence_PASS
-        request.contentType = "application/json"
-        request.body = [
-            copyLabels: true,
-            keepAuthorsAndDates: true,
-            removeAttachments: false,
-            sendEmail: false,
-            targetSpaceKey: newSpaceKey,
-            targetSpaceName: newSpaceName
-        ]
-    }
-
-    def id = json.id;
-    if (!id || json.hasFailed)
-        throw new GradleException("startSpaceExport: Some things went wrong :(")
-
-    json = docfluence_waitForAsyncTask(id)
-    // logger.error(docfluence_json(json))
-}
-
-def docfluence_publishAndDownload(docSpec, newSpaceKey, newSpaceName) {
-    def spaceKey = docSpec.spaceKey
-    def presetPDF = docfluence_presetPDF[docSpec.flavour]
-    def presetHTML = docfluence_presetHTML[docSpec.flavour]
-
-/*
-    if (docSpec.outPdf && !presetPDF) throw new GradleException("Illegal PDF flavour: " + docSpec.flavour)
-    if (docSpec.outHtml && !presetHTML) throw new GradleException("Illegal PDF flavour: " + docSpec.flavour)
-    if (!docfluence_testSpaceExists(spaceKey))
-        throw new GradleException("No such space: ${spaceKey}")
-*/
-
-    def spaceName = docfluence_getSpaceName(spaceKey)
-    def masterVersionId = docfluence_getMasterVersionIdForSpace(spaceKey)
-
-    docfluence_checkSpaceNotDirty(spaceKey, spaceName, masterVersionId)
-
-    if (docfluence_testSpaceExists(newSpaceKey))
-        docfluence_deleteSpace(newSpaceKey)
-
-    docfluence_startSpaceSelfPublish(spaceKey, spaceName, masterVersionId)
-    docfluence_startSpaceExport(spaceKey, spaceName, masterVersionId, newSpaceKey, newSpaceName)
-    def newStartPage = docfluence_getSpaceHomePageId(newSpaceKey)
-
-    docfluence_setSpaceBranding(newSpaceKey, docSpec.flavour)
-
-    if (docSpec.outPdf) {
-        def outPdf = file(docSpec.outPdf);
-        docfluence_startScrollExport(newStartPage, presetPDF, 'scroll-pdf', outPdf)
-        logger.println("docfluence: OK: ${outPdf} (${outPdf.size()} b)")
-    }
-    if (docSpec.outHtml) {
-        def tmpZip = file(docSpec.outHtml + ".zip")
-        docfluence_startScrollExport(newStartPage, presetHTML, 'scroll-html', tmpZip)
-        def outDir = file(docSpec.outHtml);
-        if (outDir.exists()) {
-            if (!outDir.deleteDir()) throw new GradleException("Failed to rm -rf: " + outDir)
-        }
-        outDir.mkdirs();
-        ant.unzip(src: tmpZip, dest: outDir, overwrite: "true")
-        tmpZip.delete();
-        logger.println("docfluence: OK: ${outDir} (${outDir.directorySize()} b)")
-    }
-
-}
-
-def docfluence_updateLocalFiles(docSpec, version) {
-    def m = version =~ /^(\d+)\.(\d+)$/
-    if (!m.matches())
-        throw new GradleException("docfluence: Version must be 'x.y', not '${version}' ")
-
-    def spaceKey = docSpec.spaceKey
-    if (!docfluence_testSpaceExists(spaceKey))
-        throw new GradleException("No such space: ${spaceKey}")
-    def spaceName = docfluence_getSpaceName(spaceKey)
-
-    def newSpaceKey = docSpec.spaceKey + m[0][1] + m[0][2] // das wird irgendwann mit den zahlen schwierig
-    def newSpaceName = "${spaceName} ${version}"
-
-    logger.quiet("${STYLE_DEBUG}docfluence: Exporting ${spaceKey} \"${spaceName}\" to ${newSpaceKey} \"${newSpaceName}\" and download ... ${STYLE_DEFAULT}")
-    docfluence_publishAndDownload(docSpec, newSpaceKey, newSpaceName)
-    logger.quiet("${STYLE_DEBUG}docfluence: OK: 1              ${STYLE_DEFAULT}")
-}
-
-def docfluence_uploadLocalFiles(docSpec) {
-    simpleExecute(["chmod", "600", ".rsyncpass"]) // also enforces existence of file
-    if (docSpec.uploadPdf) {
-        def cmd = ["rsync", "--password-file=.rsyncpass", "-a", docSpec.outPdf, docSpec.uploadPdf]
-        runCommand(cmd)
-    }
-    if (docSpec.uploadHtml) {
-        def cmd = ["rsync", "--password-file=.rsyncpass", "-a", docSpec.outHtml + '/', docSpec.uploadHtml + '/']
-        runCommand(cmd)
-    }
-}
-
-task docfluenceConfigCheck(description: 'Check pinuts.docfluence setup', group: 'Docfluence') {
-    dependsOn applyConfigDefaults
-
-    onlyIf {
-        project.ext.pinuts.docfluence
-    }
-
-    doLast {
-        def l = project.ext.pinuts.docfluence.size
-        def v = project.ext.pinuts.docfluenceVersion;
-
-        if (!v)
-            throw new GradleException("docfluence: Missing pinuts.docfluenceVersion")
-
-        def m = v =~ /^(\d+)\.(\d+)$/
-        if (!m.matches())
-            throw new GradleException("docfluence: pinuts.docfluenceVersion must be 'x.y', not '${version}' ")
-
-        def pdfs = 0
-        def html = 0
-        def upls = 0
-
-        project.ext.pinuts.docfluence.eachWithIndex { docSpec, idx ->
-            def spaceKey = docSpec.spaceKey
-            if (!spaceKey)
-                throw new GradleException("docfluence: at ${idx}: Missing spaceKey")
-
-            if (docSpec.outPdf)  pdfs++
-            if (docSpec.outHtml) html++
-            if (docSpec.uploadPdf || docSpec.uploadHtml) upls++;
-
-            if (docSpec.outHtml && docSpec.outHtml.endsWith("/"))
-                throw new GradleException("docfluence: at ${idx}: ${spaceKey}: outHtml must not end with '/'")
-
-            if (docSpec.uploadHtml && docSpec.uploadHtml.endsWith("/"))
-                throw new GradleException("docfluence: at ${idx}: ${spaceKey}: uploadHtml must not end with '/'")
-
-            def presetPDF = docfluence_presetPDF[docSpec.flavour]
-            if (docSpec.outPdf && !presetPDF)
-                throw new GradleException("docfluence: at ${idx}: ${spaceKey}: Illegal PDF flavour: " + docSpec.flavour)
-
-            def presetHTML = docfluence_presetHTML[docSpec.flavour]
-            if (docSpec.outHtml && !presetHTML)
-                throw new GradleException("docfluence: at ${idx}: ${spaceKey}: Illegal HTML flavour: " + docSpec.flavour)
-
-            if (!docfluence_testSpaceExists(spaceKey))
-                throw new GradleException("docfluence: at ${idx}: No such space: ${spaceKey}")
-        }
-        logger.println("docfluence: ${l} docs (${pdfs} pdf, ${html} html, ${upls} to upload) as version '${v}' ...")
-    }
-}
-
-task docfluenceReleaseCheck(description: 'Check docfluence release state', group: 'Docfluence') {
-    dependsOn docfluenceConfigCheck
-
-    onlyIf {
-        project.ext.pinuts.docfluence
-    }
-
-    doLast {
-        project.ext.pinuts.docfluence.each { docSpec ->
-            def spaceKey = docSpec.spaceKey
-            def spaceName = docfluence_getSpaceName(spaceKey)
-            def masterVersionId = docfluence_getMasterVersionIdForSpace(spaceKey)
-            docfluence_checkSpaceNotDirty(spaceKey, spaceName, masterVersionId)
-        }
-    }
-}
-
-task docfluenceRelease(description: 'Release and download docfluence spaces to local files', group: 'Docfluence') {
-    dependsOn docfluenceReleaseCheck
-
-    onlyIf {
-        project.ext.pinuts.docfluence
-    }
-
-    doLast {
-        def l = project.ext.pinuts.docfluence.size
-        def v = project.ext.pinuts.docfluenceVersion;
-        project.ext.pinuts.docfluence.each { docSpec ->
-            docfluence_updateLocalFiles(docSpec, v)
-        }
-        logger.println("docfluence: OK: ${l} docs released!")
-    }
-}
-
-task docfluenceUpload(description: 'Upload local files to designated remotes', group: 'Docfluence') {
-    dependsOn docfluenceConfigCheck
-
-    onlyIf {
-        project.ext.pinuts.docfluence
-    }
-
-    doLast {
-        project.ext.pinuts.docfluence.each { docSpec ->
-            if (!docSpec.uploadHtml && !docSpec.uploadPdf) return;
-            docfluence_uploadLocalFiles(docSpec)
         }
     }
 }
