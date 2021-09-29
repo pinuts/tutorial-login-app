@@ -1,7 +1,7 @@
 See [Using the Login App](https://pinutswiki.atlassian.net/wiki/x/cgAXw) on this topic.
 
 ## Quick start
-Copy your development license file to `env/devel/cmsbs-conf`:
+Copy your development license file to `um/env/devel/cmsbs-conf`:
 ```bash
 cp cmsbs.license um/env/devel/cmsbs-conf/
 ```
@@ -11,7 +11,7 @@ Install and run Universal Messenger:
 cd um && gradle setup run
 ```
 
-Login: http://localhost:8080/cmsbs
+Login: http://localhost:8080/cmsbs (`admin` / `admin`)
 
 Deploy Web App in a second console:
 ```bash
