@@ -19,3 +19,5 @@ cd my-app
 yarn
 yarn dev
 ```
+
+Visit your sample Web App: http://localhost:8000
