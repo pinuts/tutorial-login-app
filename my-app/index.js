@@ -1,5 +1,3 @@
-// index.js
-
 /**
  * Required External Modules
  */
@@ -15,7 +13,7 @@ const port = process.env.PORT || "8000";
 app.use(cookieParser());
 
 /**
- *  App Configuration
+ * App Configuration
  */
 app.set("views", path.join(__dirname, "views"));
 app.set("view engine", "pug");
@@ -41,8 +39,7 @@ app.get("/", (req, res) => {
 });
 app.use('/p/', apiProxy);
 app.get("/user", (req, res) => {
-  // UMSESSIONID aus den Cookies auslesen und an den UM weiterschicken
-
+  // get cookie UMSESSIONID and pass it to Auth2's REST API:
   if (req.cookies["UMSESSIONID"] !== undefined) {
     console.log("UMSESSIONID: ", req.cookies["UMSESSIONID"]);
     const http = require("http");
@@ -60,7 +57,7 @@ app.get("/user", (req, res) => {
       umres.on("data", (d) => {
         let umdata = JSON.parse(d);
         let userProfile = umdata.data.ses;
-        //console.log(userProfile);
+        console.log('userProfile retreived:', userProfile);
         res.render("user", {
           title: "Profile",
           userProfile: userProfile,
