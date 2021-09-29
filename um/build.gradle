@@ -6,7 +6,7 @@ dependencies {
     runtime('de.pinuts.cmsbs:UM:7.40.1')
     runtime('de.pinuts.cmsbs:CseConsole:7.32.3')
     runtime('de.pinuts.cmsbs:TestDriver2:2.0.10')
-    // runtime('de.pinuts.cmsbs:Auth2:4.6.0')
+    runtime('de.pinuts.cmsbs:Auth2:4.6.0')
 }
 
 pinuts.projectName = 'MyProject'

@@ -1,0 +1,26 @@
+extends layout
+
+block layout-content
+  div.View.UserView
+    if userProfile
+      h1.Banner Howdy, #{userProfile.firstname} #{userProfile.lastname}!
+    div.Message
+      div.Title
+        h3 Universal Messenger
+        h1 Login App Tutorial
+        if userProfile
+          pre.Details You are granted the following permission: #{userProfile._permissions}
+
+        div(id="pinuts-widgets-auth2-p7852919-loader", class="pinuts-widgets-loading") Formular wird geladen ...
+        script(id="pinuts-widgets-auth2-p7852919").
+            (function() {
+                var errorHtml = "Formular konnte nicht geladen werden.";
+                var locale = "en";
+                var containerId = "pinuts-widgets-auth2-p7852919";
+                window.setTimeout(function(){var d = document.getElementById(containerId + '-loader');if (!d) return;d.setAttribute("class","pinuts-widgets-loading failed");d.innerHTML = errorHtml;}, 10000);
+                var script = document.createElement('script'); script.src = '/cmsbs/rest/de.pinuts.cmsbs.auth2.Widget/index?name=my-app&containerId=' + containerId + '&locale=' + locale;
+                document.getElementsByTagName('script')[0].parentNode.appendChild(script);
+            })();
+    div.NavButtons
+      a(href="/logout")
+        div.NavButton Log out

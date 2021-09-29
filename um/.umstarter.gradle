@@ -93,6 +93,13 @@ repositories {
             password System.getenv('PINUTS_MAVENREPO_PASSWORD') ?: ''
         }
     }
+    maven {
+        url 'https://pinuts.mycloudrepo.io/repositories/auth2'
+        credentials {
+            username System.getenv('PINUTS_MAVENREPO_USERNAME') ?: ''
+            password System.getenv('PINUTS_MAVENREPO_PASSWORD') ?: ''
+        }
+    }
 }
 
 ext {
