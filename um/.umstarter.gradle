@@ -94,7 +94,14 @@ repositories {
         }
     }
     maven {
-        url 'https://pinuts.mycloudrepo.io/repositories/auth2'
+        url 'https://pinuts.mycloudrepo.io/repositories/login'
+        credentials {
+            username System.getenv('PINUTS_MAVENREPO_USERNAME') ?: ''
+            password System.getenv('PINUTS_MAVENREPO_PASSWORD') ?: ''
+        }
+    }
+    maven {
+        url 'https://pinuts.mycloudrepo.io/repositories/servicedesk'
         credentials {
             username System.getenv('PINUTS_MAVENREPO_USERNAME') ?: ''
             password System.getenv('PINUTS_MAVENREPO_PASSWORD') ?: ''
@@ -402,6 +409,9 @@ task installUm(description: 'Installs the Universal Messenger', group: 'pinuts')
                 if (outfile.isFile()) outfile.delete()
                 outfile.withOutputStream { out -> url.withInputStream { from -> out << from; } }
             }
+
+            // Workaround: UM-571 Versionskonflikt rund um Activation / JavaMail auflösen
+            new File(pinuts.um.libDir, 'javax.activation.jar').renameTo(new File(pinuts.um.serverHome, 'server/lib/javax.activation.jar'))
         }
     }
 }
